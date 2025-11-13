@@ -1,7 +1,6 @@
 # main.py
 import os
 import logging
-from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -154,6 +153,7 @@ def run_multi_strategy_backtest():
         ("Bollinger Bands", BollingerBandsStrategy()),
         ("MA Cross", MovingAverageCrossStrategy()),
         ("Combined Strategy", CombinedStrategy()),
+        # Référence Buy & Hold ajoutée pour le benchmark simple.
         ("Buy & Hold", BuyAndHoldStrategy()),
     ]
 
@@ -180,8 +180,8 @@ def run_multi_strategy_backtest():
         )
 
         if name == "Buy & Hold":
-            # On mémorise les métriques pour le comparatif final.
-            benchmark_metrics = metrics
+            # On mémorise les métriques pour le comparatif final (copie défensive).
+            benchmark_metrics = metrics.copy()
 
         log_strategy_metrics(name, metrics)
 
@@ -190,7 +190,8 @@ def run_multi_strategy_backtest():
         ):
             best = {
                 "name": name,
-                "metrics": metrics,
+                # On stocke une copie pour éviter qu'une mutation ultérieure n'affecte le résumé.
+                "metrics": metrics.copy(),
                 "df": bt_df,
                 "trades": trades_df,
             }
