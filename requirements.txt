@@ -1,0 +1,10 @@
+python-binance==1.0.17
+pandas
+numpy
+matplotlib
+plotly
+seaborn
+python-dotenv
+scikit-learn
+ta
+rich
