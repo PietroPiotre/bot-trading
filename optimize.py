@@ -54,6 +54,10 @@ def optimize_rsi(symbol, interval, start_date, end_date):
         logging.error("No historical data retrieved. Aborting optimisation.")
         return []
 
+    if df is None or df.empty:
+        logging.error("No historical data retrieved. Aborting optimisation.")
+        return []
+
     results = []
     combinations = 0
 

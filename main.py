@@ -9,6 +9,10 @@ from config import (
     DEFAULT_SYMBOL,
     DEFAULT_INTERVAL,
     ALLOWED_INTERVALS,
+    DEFAULT_PERIOD,
+    ALLOWED_PERIODS,
+    PERIOD_DEFINITIONS,
+    compute_period_bounds,
 )  # on ne récupère plus STOP_LOSS_PERCENT ici
 
 from data_manager import DataManager
@@ -102,13 +106,44 @@ def prompt_interval(default_interval: str = DEFAULT_INTERVAL) -> str:
     return user_input
 
 
+def prompt_period(default_period: str = DEFAULT_PERIOD) -> str:
+    """Prompt the user for a historical window duration."""
+
+    print()
+    print("Select backtest period:")
+    period_items = list(enumerate(ALLOWED_PERIODS, start=1))
+    for index, code in period_items:
+        label = PERIOD_DEFINITIONS[code]["label"]
+        marker = " (default)" if code == default_period else ""
+        print(f"  {index}) {label} [{code}]{marker}")
+
+    default_label = PERIOD_DEFINITIONS[default_period]["label"]
+    user_input = input(
+        f"Choice [{default_label}]: "
+    ).strip().lower()
+
+    if not user_input:
+        return default_period
+
+    if user_input in PERIOD_DEFINITIONS:
+        return user_input
+
+    if user_input.isdigit():
+        try:
+            selected_code = period_items[int(user_input) - 1][1]
+            return selected_code
+        except (IndexError, ValueError):
+            pass
+
+    print(
+        f"Invalid period '{user_input}'. Using default '{default_label}' ({default_period})."
+    )
+    return default_period
+
+
 # ------------------ PARAMÈTRES GLOBAUX SIMPLES ------------------
 # BNB par défaut
 SYMBOL = DEFAULT_SYMBOL if DEFAULT_SYMBOL else "BNBUSDT"
-
-# Période par défaut pour le backtest (choix 1)
-START_DATE = "2024-01-01"
-END_DATE = "2025-11-01"
 
 # Gestion du risque (intégré directement ici)
 INITIAL_CAPITAL = 10_000
@@ -134,13 +169,33 @@ def setup_logging():
 
 
 # ------------------ BACKTEST MULTI-STRATÉGIES (CHOIX 1) ------------------
-def run_multi_strategy_backtest(interval: str = DEFAULT_INTERVAL):
+def run_multi_strategy_backtest(
+    interval: str = DEFAULT_INTERVAL,
+    period: str = DEFAULT_PERIOD,
+):
     load_dotenv()
     setup_logging()
 
     symbol = SYMBOL
-    start_date = START_DATE
-    end_date = END_DATE
+
+    if interval not in ALLOWED_INTERVALS:
+        logging.warning(
+            "Interval '%s' is not supported. Falling back to '%s'.",
+            interval,
+            DEFAULT_INTERVAL,
+        )
+        interval = DEFAULT_INTERVAL
+
+    if period not in ALLOWED_PERIODS:
+        logging.warning(
+            "Period '%s' is not supported. Falling back to '%s'.",
+            period,
+            DEFAULT_PERIOD,
+        )
+        period = DEFAULT_PERIOD
+
+    start_date, end_date = compute_period_bounds(period)
+    period_label = PERIOD_DEFINITIONS[period]["label"]
 
     if interval not in ALLOWED_INTERVALS:
         logging.warning(
@@ -158,14 +213,19 @@ def run_multi_strategy_backtest(interval: str = DEFAULT_INTERVAL):
     print("=" * 60)
     print(f"Symbol      : {symbol}")
     print(f"Interval    : {interval}")
-    print(f"Period      : {start_date} -> {end_date}")
+    print(f"Period      : {start_date} -> {end_date} ({period_label})")
     print(f"Capital init: ${INITIAL_CAPITAL:,.2f}")
     print(f"Stop loss   : {stop_loss * 100:.2f} %")
     print(f"Take profit : {take_profit * 100:.2f} %")
     print()
 
     logging.info(
-        f"Backtest multi-strategies: {symbol} {interval} {start_date} -> {end_date}"
+        "Backtest multi-strategies: %s %s %s -> %s (%s)",
+        symbol,
+        interval,
+        start_date,
+        end_date,
+        period,
     )
 
     # ---- Chargement des données ----
@@ -290,23 +350,34 @@ def run_multi_strategy_backtest(interval: str = DEFAULT_INTERVAL):
     viz.plot_backtest(
         df=best_df,
         trades=best_trades,
-        title=f"Best Strategy: {best_name} - {symbol} ({interval})",
+        title=f"Best Strategy: {best_name} - {symbol} ({interval}, {period})",
     )
 
 
 # ------------------ MENU PRINCIPAL ------------------
-def main_menu(default_interval: str = DEFAULT_INTERVAL):
+def main_menu(
+    default_interval: str = DEFAULT_INTERVAL,
+    default_period: str = DEFAULT_PERIOD,
+):
     setup_logging()
     load_dotenv()
 
-    current_interval = default_interval if default_interval in ALLOWED_INTERVALS else DEFAULT_INTERVAL
+    current_interval = (
+        default_interval if default_interval in ALLOWED_INTERVALS else DEFAULT_INTERVAL
+    )
+    current_period = (
+        default_period if default_period in ALLOWED_PERIODS else DEFAULT_PERIOD
+    )
 
     while True:
         print()
         print("=" * 60)
         print("TheMiidsOne Crypto Bot - MAIN MENU")
         print("=" * 60)
-        print(f"1) Backtest multi-strategies (BNBUSDT, {current_interval})")
+        print(
+            "1) Backtest multi-strategies (BNBUSDT, "
+            f"{current_interval}, {PERIOD_DEFINITIONS[current_period]['label']})"
+        )
         print("2) Optimisation RSI")
         print("3) Live Bot (TEST MODE)")
         print("0) Quit")
@@ -316,8 +387,13 @@ def main_menu(default_interval: str = DEFAULT_INTERVAL):
 
         if choice == "1":
             selected_interval = prompt_interval(current_interval)
-            run_multi_strategy_backtest(interval=selected_interval)
+            selected_period = prompt_period(current_period)
+            run_multi_strategy_backtest(
+                interval=selected_interval,
+                period=selected_period,
+            )
             current_interval = selected_interval
+            current_period = selected_period
         elif choice == "2":
             rsi_optimize_main()
         elif choice == "3":
@@ -337,9 +413,18 @@ def parse_args():
         default=DEFAULT_INTERVAL,
         help="Default interval used for multi-strategy backtests.",
     )
+    parser.add_argument(
+        "--period",
+        choices=ALLOWED_PERIODS,
+        default=DEFAULT_PERIOD,
+        help="Default history length used for multi-strategy backtests.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main_menu(default_interval=args.interval)
+    main_menu(
+        default_interval=args.interval,
+        default_period=args.period,
+    )
