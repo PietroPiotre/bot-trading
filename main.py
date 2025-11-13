@@ -197,14 +197,6 @@ def run_multi_strategy_backtest(
     start_date, end_date = compute_period_bounds(period)
     period_label = PERIOD_DEFINITIONS[period]["label"]
 
-    if interval not in ALLOWED_INTERVALS:
-        logging.warning(
-            "Interval '%s' is not supported. Falling back to '%s'.",
-            interval,
-            DEFAULT_INTERVAL,
-        )
-        interval = DEFAULT_INTERVAL
-
     stop_loss = STOP_LOSS_PERCENT
     take_profit = TAKE_PROFIT_PERCENT
 
@@ -240,14 +232,15 @@ def run_multi_strategy_backtest(
     logging.info("Historical data loaded")
 
     # ---- Stratégies à tester ----
+    benchmark_name = "Buy & Hold (benchmark)"
     strategy_list = [
-        ("RSI Strategy", RSIStrategy()),
-        ("MACD Strategy", MACDStrategy()),
-        ("Bollinger Bands", BollingerBandsStrategy()),
-        ("MA Cross", MovingAverageCrossStrategy()),
-        ("Combined Strategy", CombinedStrategy()),
+        ("RSI Strategy", RSIStrategy(), False),
+        ("MACD Strategy", MACDStrategy(), False),
+        ("Bollinger Bands", BollingerBandsStrategy(), False),
+        ("MA Cross", MovingAverageCrossStrategy(), False),
+        ("Combined Strategy", CombinedStrategy(), False),
         # Référence Buy & Hold ajoutée pour le benchmark simple.
-        ("Buy & Hold", BuyAndHoldStrategy()),
+        (benchmark_name, BuyAndHoldStrategy(), True),
     ]
 
     backtester = Backtester(
@@ -259,7 +252,7 @@ def run_multi_strategy_backtest(
     best = None
     benchmark_metrics = None
 
-    for name, strategy in strategy_list:
+    for name, strategy, is_benchmark in strategy_list:
         print()
         print(f"  Testing: {name}...")
         logging.info(f"Test strategy: {name}")
@@ -289,10 +282,10 @@ def run_multi_strategy_backtest(
                 "trades": trades_df,
             }
 
-    print()
-    if best is None:
-        print("No strategy produced results.")
-        return
+        print()
+        print("=" * 60)
+        print("TOP NON-BENCHMARK STRATEGY SUMMARY")
+        print("=" * 60)
 
     best_name = best["name"]
     best_metrics = best["metrics"]
@@ -301,11 +294,9 @@ def run_multi_strategy_backtest(
     logging.info(f"Best strategy: {best_name}")
     print(f"Best strategy: {best_name}")
 
-    # ---- Résumé ----
-    print()
-    print("=" * 60)
-    print("BACKTEST SUMMARY")
-    print("=" * 60)
+        diff = total_return - benchmark_return
+        if benchmark_result:
+            print(f"  • Δ vs Buy & Hold: {diff:+.2f}%")
 
     final_value = best_metrics.get("final_capital", INITIAL_CAPITAL)
     total_return = best_metrics.get("total_return_pct", 0.0)
