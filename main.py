@@ -253,61 +253,47 @@ def run_multi_strategy_backtest(
     best = None
     benchmark_metrics = None
 
-    for name, strategy, is_benchmark in strategy_list:
-        print()
-        print(f"  Testing: {name}...")
-        logging.info(f"Test strategy: {name}")
-
-        bt_df, metrics, trades_df = run_strategy_once(
-            backtester,
-            df,
-            strategy,
-            stop_loss,
-            take_profit,
-        )
-
-        if name == "Buy & Hold":
-            # On mémorise les métriques pour le comparatif final (copie défensive).
-            benchmark_metrics = metrics.copy()
-
-        log_strategy_metrics(name, metrics)
-
-        if best is None or metrics.get("total_return", -999) > best["metrics"].get(
+            if best is None or metrics.get("total_return", -999) > best["metrics"].get(
             "total_return", -999
         ):
             best = {
                 "name": name,
-                # On stocke une copie pour éviter qu'une mutation ultérieure n'affecte le résumé.
                 "metrics": metrics.copy(),
                 "df": bt_df,
                 "trades": trades_df,
             }
 
-        print()
-        print("=" * 60)
-        print("TOP NON-BENCHMARK STRATEGY SUMMARY")
-        print("=" * 60)
+# Après la boucle, on produit le résumé :
+
+    print()
+    print("=" * 60)
+    print("TOP NON-BENCHMARK STRATEGY SUMMARY")
+    print("=" * 60)
 
     best_name = best["name"]
     best_metrics = best["metrics"]
     best_df = best["df"]
     best_trades = best["trades"]
+
     logging.info(f"Best strategy: {best_name}")
     print(f"Best strategy: {best_name}")
 
-        diff = total_return - benchmark_return
-        if benchmark_result:
-            print(f"  • Δ vs Buy & Hold: {diff:+.2f}%")
+    # Comparaison avec le Buy & Hold si disponible
+    total_return = best_metrics.get("total_return_pct", 0.0)
+    benchmark_return = benchmark_metrics.get("total_return_pct", 0.0)
+    diff = total_return - benchmark_return
+
+    if benchmark_metrics:
+        print(f"  • Δ vs Buy & Hold: {diff:+.2f}%")
 
     final_value = best_metrics.get("final_capital", INITIAL_CAPITAL)
-    total_return = best_metrics.get("total_return_pct", 0.0)
     win_rate = best_metrics.get("win_rate", 0.0)
     max_dd = best_metrics.get("max_drawdown", 0.0)
     sharpe = best_metrics.get("sharpe_ratio", 0.0)
     calmar = best_metrics.get("calmar_ratio", 0.0)
     num_trades = best_metrics.get("total_trades", 0)
 
-    print(f"Strategy: {top_name}")
+    print(f"Strategy: {best_name}")
     print("Capital:")
     print(f"  • Initial: ${INITIAL_CAPITAL:,.2f}")
     print(f"  • Final  : ${final_value:,.2f}")
@@ -321,6 +307,7 @@ def run_multi_strategy_backtest(
     print(f"  • Max drawdown : {max_dd:.2f}%")
     print(f"  • Sharpe ratio : {sharpe:.2f}")
     print(f"  • Calmar ratio : {calmar:.2f}")
+
 
     if benchmark_metrics is not None:
         bench_final = benchmark_metrics.get("final_capital", INITIAL_CAPITAL)
