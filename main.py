@@ -120,28 +120,49 @@ def run_multi_strategy_backtest():
 
         df_copy = df.copy()
 
-        # Les stratégies peuvent indiquer qu'elles ne doivent pas subir le SL/TP.
-        strategy_stop_loss = (
-            stop_loss if getattr(strategy, "allow_stop_take", True) else None
-        )
-        strategy_take_profit = (
-            take_profit if getattr(strategy, "allow_stop_take", True) else None
-        )
+# les stratégies peuvent indiquer qu'elles ne doivent pas subir le SL/TP.
+strategy_stop_loss = (
+    stop_loss if getattr(strategy, "allow_stop_take", True) else None
+)
 
-        bt_df, metrics = backtester.run(
-            data=df_copy,
-            strategy=strategy,
-            stop_loss=strategy_stop_loss,
-            take_profit=strategy_take_profit,
-        )
+strategy_take_profit = (
+    take_profit if getattr(strategy, "allow_stop_take", True) else None
+)
+
+bt_df, metrics = backtester.run(
+    data=df_copy,
+    strategy=strategy,
+    stop_loss=strategy_stop_loss,
+    take_profit=strategy_take_profit,
+)
 
         trades_df = backtester.get_trade_log().copy()
         results.append((name, metrics, bt_df, trades_df))
 
-        if name == "Buy & Hold":
-            # On mémorise les métriques pour le comparatif final.
-            benchmark_metrics = metrics
+if name == "Buy & Hold":
+    # On mémorise les métriques pour le comparatif final.
+    benchmark_metrics = metrics
 
+total_return = metrics.get("total_return_pct", 0.0)
+sharpe = metrics.get("sharpe_ratio", 0.0)
+trades_count = metrics.get("total_trades", 0)
+max_dd = metrics.get("max_drawdown", 0.0)
+
+print(
+    f"    • Return: {total_return:.2f}% | "
+    f"Sharpe: {sharpe:.2f} | "
+    f"Trades: {trades_count} | "
+    f"Max DD: {max_dd:.2f}%"
+)
+
+logging.info(
+    f"Result {name}: return={total_return:.2f}% "
+    f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
+)
+
+if best is None or metrics.get("total_return", -999) > best[1].get("total_return", -999):
+    best = (name, metrics, bt_df, trades_df)
+ main
         total_return = metrics.get("total_return_pct", 0.0)
         sharpe = metrics.get("sharpe_ratio", 0.0)
         trades_count = metrics.get("total_trades", 0)
