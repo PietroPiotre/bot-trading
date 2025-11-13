@@ -1,5 +1,7 @@
 import logging
 from datetime import datetime, timedelta
+
+from config import DEFAULT_INTERVAL, ALLOWED_INTERVALS
 from data_manager import DataManager
 from backtester import Backtester
 from strategies import RSIStrategy
@@ -70,9 +72,11 @@ def optimize_rsi(symbol, interval, start_date, end_date):
             for overbought in overbought_levels:
 
                 strategy = RSIStrategy(
-                    rsi_period=period,
-                    oversold=oversold,
-                    overbought=overbought
+                    params={
+                        "rsi_period": period,
+                        "rsi_oversold": oversold,
+                        "rsi_overbought": overbought,
+                    }
                 )
 
                 _, performance = backtester.run(
@@ -105,6 +109,23 @@ def optimize_rsi(symbol, interval, start_date, end_date):
 # MENU PRINCIPAL
 # =====================================================================
 
+def prompt_interval(default: str = DEFAULT_INTERVAL) -> str:
+    """Prompt the user for a valid Binance interval."""
+
+    allowed_display = ", ".join(ALLOWED_INTERVALS)
+    print(f"\n📏 Intervalles disponibles : {allowed_display}")
+    choice = input(f"👉 Intervalle [{default}] : ").strip()
+
+    if not choice:
+        return default
+
+    if choice not in ALLOWED_INTERVALS:
+        print(f"❌ Intervalle invalide '{choice}'. On conserve '{default}'.")
+        return default
+
+    return choice
+
+
 def main():
     print("=" * 60)
     print("🔧 RSI STRATEGY OPTIMIZER")
@@ -123,7 +144,7 @@ def main():
     else:
         symbol = default_symbol
 
-    interval = "1h"
+    interval = prompt_interval(DEFAULT_INTERVAL)
 
     # --------------------------------------------------------
     # CHOIX DE DURÉE
