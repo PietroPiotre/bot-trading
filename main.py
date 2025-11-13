@@ -27,6 +27,7 @@ from strategies import (
 )
 from visualizer import BacktestVisualizer
 from optimize import main as rsi_optimize_main
+from optimize_MACD import interactive_session as macd_optimize_cli
 from run_live_bot import main as live_bot_main
 
 
@@ -386,8 +387,14 @@ def main_menu(
             current_interval = selected_interval
             current_period = selected_period
         elif choice == "2":
-            rsi_optimize_main()
+            _, current_interval, current_period = macd_optimize_cli(
+                default_symbol=SYMBOL,
+                default_interval=current_interval,
+                default_period=current_period,
+            )
         elif choice == "3":
+            rsi_optimize_main()
+        elif choice == "4":
             live_bot_main()
         elif choice == "0":
             print("Bye.")
