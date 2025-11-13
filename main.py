@@ -197,6 +197,14 @@ def run_multi_strategy_backtest(
     start_date, end_date = compute_period_bounds(period)
     period_label = PERIOD_DEFINITIONS[period]["label"]
 
+    if interval not in ALLOWED_INTERVALS:
+        logging.warning(
+            "Interval '%s' is not supported. Falling back to '%s'.",
+            interval,
+            DEFAULT_INTERVAL,
+        )
+        interval = DEFAULT_INTERVAL
+
     stop_loss = STOP_LOSS_PERCENT
     take_profit = TAKE_PROFIT_PERCENT
 
