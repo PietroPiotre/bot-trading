@@ -100,6 +100,44 @@ class DataManager:
         print(f"💾 Données sauvegardées en cache: {cache_file}")
         
         return df
+
+    def get_historical_data(
+        self,
+        symbol,
+        interval,
+        start_date,
+        end_date=None,
+        prepare: bool = True,
+    ):
+        """Public helper used across the app to load cached Binance data.
+
+        Historically the project referenced ``get_historical_data`` while the
+        implementation only exposed ``fetch_historical_data``.  Re-introducing
+        this wrapper keeps backward compatibility and centralises optional data
+        preparation for the backtester.
+
+        Args:
+            symbol: Trading pair, e.g. ``'BTCUSDT'``.
+            interval: Candle interval accepted by Binance, e.g. ``'1h'``.
+            start_date: Start date (``datetime`` or ISO string).
+            end_date: Optional end date (``datetime`` or ISO string).
+            prepare: When ``True`` (default) enriches the dataset with returns
+                via :meth:`prepare_data_for_backtesting`.
+
+        Returns:
+            pandas.DataFrame: cleaned OHLCV dataset ready for backtesting, or
+            ``None`` if no data could be retrieved.
+        """
+
+        df = self.fetch_historical_data(symbol, interval, start_date, end_date)
+
+        if df is None or df.empty:
+            return df
+
+        if prepare:
+            df = self.prepare_data_for_backtesting(df)
+
+        return df
     
     def _get_cache_filename(self, symbol, interval, start_date, end_date):
         """Génère un nom de fichier pour le cache"""
