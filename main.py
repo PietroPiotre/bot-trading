@@ -15,6 +15,7 @@ from strategies import (
     BollingerBandsStrategy,
     MovingAverageCrossStrategy,
     CombinedStrategy,
+    BuyAndHoldStrategy,
 )
 from visualizer import BacktestVisualizer
 from optimize import main as rsi_optimize_main
@@ -99,6 +100,7 @@ def run_multi_strategy_backtest():
         ("Bollinger Bands", BollingerBandsStrategy()),
         ("MA Cross", MovingAverageCrossStrategy()),
         ("Combined Strategy", CombinedStrategy()),
+        ("Buy & Hold", BuyAndHoldStrategy()),
     ]
 
     backtester = Backtester(
@@ -109,6 +111,7 @@ def run_multi_strategy_backtest():
 
     results = []
     best = None
+    benchmark_metrics = None
 
     for name, strategy in strategy_list:
         print()
@@ -117,20 +120,32 @@ def run_multi_strategy_backtest():
 
         df_copy = df.copy()
 
-        bt_df, trades = backtester.run(
-            data=df_copy,
-            strategy=strategy,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
+        # Les stratégies peuvent indiquer qu'elles ne doivent pas subir le SL/TP.
+        strategy_stop_loss = (
+            stop_loss if getattr(strategy, "allow_stop_take", True) else None
+        )
+        strategy_take_profit = (
+            take_profit if getattr(strategy, "allow_stop_take", True) else None
         )
 
-        metrics = backtester.calculate_metrics(bt_df)
-        results.append((name, metrics, bt_df, trades))
+        bt_df, metrics = backtester.run(
+            data=df_copy,
+            strategy=strategy,
+            stop_loss=strategy_stop_loss,
+            take_profit=strategy_take_profit,
+        )
 
-        total_return = metrics.get("total_return", 0.0) * 100.0
+        trades_df = backtester.get_trade_log().copy()
+        results.append((name, metrics, bt_df, trades_df))
+
+        if name == "Buy & Hold":
+            # On mémorise les métriques pour le comparatif final.
+            benchmark_metrics = metrics
+
+        total_return = metrics.get("total_return_pct", 0.0)
         sharpe = metrics.get("sharpe_ratio", 0.0)
-        trades_count = metrics.get("num_trades", 0)
-        max_dd = metrics.get("max_drawdown", 0.0) * 100.0
+        trades_count = metrics.get("total_trades", 0)
+        max_dd = metrics.get("max_drawdown", 0.0)
 
         print(
             f"    • Return: {total_return:.2f}% | "
@@ -147,7 +162,7 @@ def run_multi_strategy_backtest():
         if best is None or metrics.get("total_return", -999) > best[1].get(
             "total_return", -999
         ):
-            best = (name, metrics, bt_df, trades)
+            best = (name, metrics, bt_df, trades_df)
 
     print()
     if best is None:
@@ -164,13 +179,13 @@ def run_multi_strategy_backtest():
     print("BACKTEST SUMMARY")
     print("=" * 60)
 
-    final_value = best_metrics.get("final_value", INITIAL_CAPITAL)
-    total_return = best_metrics.get("total_return", 0.0) * 100.0
-    win_rate = best_metrics.get("win_rate", 0.0) * 100.0
-    max_dd = best_metrics.get("max_drawdown", 0.0) * 100.0
+    final_value = best_metrics.get("final_capital", INITIAL_CAPITAL)
+    total_return = best_metrics.get("total_return_pct", 0.0)
+    win_rate = best_metrics.get("win_rate", 0.0)
+    max_dd = best_metrics.get("max_drawdown", 0.0)
     sharpe = best_metrics.get("sharpe_ratio", 0.0)
     calmar = best_metrics.get("calmar_ratio", 0.0)
-    num_trades = best_metrics.get("num_trades", 0)
+    num_trades = best_metrics.get("total_trades", 0)
 
     print("Capital:")
     print(f"  • Initial: ${INITIAL_CAPITAL:,.2f}")
@@ -185,6 +200,21 @@ def run_multi_strategy_backtest():
     print(f"  • Max drawdown : {max_dd:.2f}%")
     print(f"  • Sharpe ratio : {sharpe:.2f}")
     print(f"  • Calmar ratio : {calmar:.2f}")
+
+    if benchmark_metrics is not None:
+        bench_final = benchmark_metrics.get("final_capital", INITIAL_CAPITAL)
+        bench_return = benchmark_metrics.get("total_return_pct", 0.0)
+        bench_max_dd = benchmark_metrics.get("max_drawdown", 0.0)
+
+        print()
+        print("Benchmark Buy & Hold:")
+        print(f"  • Final capital : ${bench_final:,.2f}")
+        print(f"  • Return        : {bench_return:.2f}%")
+        print(f"  • Max drawdown  : {bench_max_dd:.2f}%")
+
+        diff = total_return - bench_return
+        print(f"Compared to Buy & Hold: {diff:+.2f}%")
+
     print("=" * 60)
 
     # ---- Graphiques ----
