@@ -307,6 +307,7 @@ def run_multi_strategy_backtest(
     calmar = best_metrics.get("calmar_ratio", 0.0)
     num_trades = best_metrics.get("total_trades", 0)
 
+    print(f"Strategy: {top_name}")
     print("Capital:")
     print(f"  • Initial: ${INITIAL_CAPITAL:,.2f}")
     print(f"  • Final  : ${final_value:,.2f}")
