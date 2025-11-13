@@ -1,10 +1,15 @@
 # main.py
+import argparse
 import os
 import logging
 
 from dotenv import load_dotenv
 
-from config import DEFAULT_SYMBOL  # on ne récupère plus STOP_LOSS_PERCENT ici
+from config import (
+    DEFAULT_SYMBOL,
+    DEFAULT_INTERVAL,
+    ALLOWED_INTERVALS,
+)  # on ne récupère plus STOP_LOSS_PERCENT ici
 
 from data_manager import DataManager
 from backtester import Backtester
@@ -75,10 +80,31 @@ def run_strategy_once(
     return bt_df, metrics, trades_df
 
 
+def prompt_interval(default_interval: str = DEFAULT_INTERVAL) -> str:
+    """Prompt the user for a candle interval and validate the choice."""
+
+    allowed_display = ", ".join(ALLOWED_INTERVALS)
+    print()
+    print(f"Available intervals: {allowed_display}")
+    user_input = input(
+        f"Choose interval [{default_interval}]: "
+    ).strip()
+
+    if not user_input:
+        return default_interval
+
+    if user_input not in ALLOWED_INTERVALS:
+        print(
+            f"Invalid interval '{user_input}'. Using default '{default_interval}'."
+        )
+        return default_interval
+
+    return user_input
+
+
 # ------------------ PARAMÈTRES GLOBAUX SIMPLES ------------------
 # BNB par défaut
 SYMBOL = DEFAULT_SYMBOL if DEFAULT_SYMBOL else "BNBUSDT"
-INTERVAL = "1h"
 
 # Période par défaut pour le backtest (choix 1)
 START_DATE = "2024-01-01"
@@ -108,14 +134,21 @@ def setup_logging():
 
 
 # ------------------ BACKTEST MULTI-STRATÉGIES (CHOIX 1) ------------------
-def run_multi_strategy_backtest():
+def run_multi_strategy_backtest(interval: str = DEFAULT_INTERVAL):
     load_dotenv()
     setup_logging()
 
     symbol = SYMBOL
-    interval = INTERVAL
     start_date = START_DATE
     end_date = END_DATE
+
+    if interval not in ALLOWED_INTERVALS:
+        logging.warning(
+            "Interval '%s' is not supported. Falling back to '%s'.",
+            interval,
+            DEFAULT_INTERVAL,
+        )
+        interval = DEFAULT_INTERVAL
 
     stop_loss = STOP_LOSS_PERCENT
     take_profit = TAKE_PROFIT_PERCENT
@@ -257,21 +290,23 @@ def run_multi_strategy_backtest():
     viz.plot_backtest(
         df=best_df,
         trades=best_trades,
-        title=f"Best Strategy: {best_name} - {symbol}",
+        title=f"Best Strategy: {best_name} - {symbol} ({interval})",
     )
 
 
 # ------------------ MENU PRINCIPAL ------------------
-def main_menu():
+def main_menu(default_interval: str = DEFAULT_INTERVAL):
     setup_logging()
     load_dotenv()
+
+    current_interval = default_interval if default_interval in ALLOWED_INTERVALS else DEFAULT_INTERVAL
 
     while True:
         print()
         print("=" * 60)
         print("TheMiidsOne Crypto Bot - MAIN MENU")
         print("=" * 60)
-        print("1) Backtest multi-strategies (BNBUSDT, 1h)")
+        print(f"1) Backtest multi-strategies (BNBUSDT, {current_interval})")
         print("2) Optimisation RSI")
         print("3) Live Bot (TEST MODE)")
         print("0) Quit")
@@ -280,7 +315,9 @@ def main_menu():
         choice = input("Your choice: ").strip()
 
         if choice == "1":
-            run_multi_strategy_backtest()
+            selected_interval = prompt_interval(current_interval)
+            run_multi_strategy_backtest(interval=selected_interval)
+            current_interval = selected_interval
         elif choice == "2":
             rsi_optimize_main()
         elif choice == "3":
@@ -292,5 +329,17 @@ def main_menu():
             print("Invalid choice, try again.")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Crypto bot main menu")
+    parser.add_argument(
+        "--interval",
+        choices=ALLOWED_INTERVALS,
+        default=DEFAULT_INTERVAL,
+        help="Default interval used for multi-strategy backtests.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main_menu()
+    args = parse_args()
+    main_menu(default_interval=args.interval)
