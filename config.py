@@ -13,6 +13,9 @@ TEST_MODE = os.getenv("TEST_MODE", "True") == "True"
 DEFAULT_SYMBOL = "BNBUSDT"
 DEFAULT_INTERVAL = "1h"
 
+# Interval choices explicitly supported by the CLI / utilities
+ALLOWED_INTERVALS = ("1m", "5m", "15m", "1h", "4h", "1d")
+
 # Used by main menu backtests
 START_DATE = "2024-01-01"
 END_DATE = "2025-11-01"
