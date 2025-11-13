@@ -1,8 +1,10 @@
 import logging
 from datetime import datetime, timedelta
+
+from config import DEFAULT_INTERVAL, ALLOWED_INTERVALS
 from data_manager import DataManager
 from backtester import Backtester
-from strategies import RSI_Strategy
+from strategies import RSIStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +50,10 @@ def optimize_rsi(symbol, interval, start_date, end_date):
     dm = DataManager()
     df = dm.get_historical_data(symbol, interval, start_date, end_date)
 
+    if df is None or df.empty:
+        logging.error("No historical data retrieved. Aborting optimisation.")
+        return []
+
     results = []
     combinations = 0
 
@@ -59,25 +65,30 @@ def optimize_rsi(symbol, interval, start_date, end_date):
     total_combos = len(rsi_periods) * len(oversold_levels) * len(overbought_levels)
     print(f"🔍 Testing {total_combos} combinations...")
 
+    backtester = Backtester()
+
     for period in rsi_periods:
         for oversold in oversold_levels:
             for overbought in overbought_levels:
 
-                strategy = RSI_Strategy(
-                    rsi_period=period,
-                    oversold=oversold,
-                    overbought=overbought
+                strategy = RSIStrategy(
+                    params={
+                        "rsi_period": period,
+                        "rsi_oversold": oversold,
+                        "rsi_overbought": overbought,
+                    }
                 )
 
-                bt = Backtester(df, strategy)
-
-                performance = bt.run()
+                _, performance = backtester.run(
+                    data=df.copy(),
+                    strategy=strategy,
+                )
 
                 results.append({
                     "period": period,
                     "oversold": oversold,
                     "overbought": overbought,
-                    "return": performance["total_return"],
+                    "return": performance["total_return_pct"],
                     "sharpe": performance["sharpe_ratio"],
                     "maxdd": performance["max_drawdown"],
                     "trades": performance["total_trades"],
@@ -98,6 +109,23 @@ def optimize_rsi(symbol, interval, start_date, end_date):
 # MENU PRINCIPAL
 # =====================================================================
 
+def prompt_interval(default: str = DEFAULT_INTERVAL) -> str:
+    """Prompt the user for a valid Binance interval."""
+
+    allowed_display = ", ".join(ALLOWED_INTERVALS)
+    print(f"\n📏 Intervalles disponibles : {allowed_display}")
+    choice = input(f"👉 Intervalle [{default}] : ").strip()
+
+    if not choice:
+        return default
+
+    if choice not in ALLOWED_INTERVALS:
+        print(f"❌ Intervalle invalide '{choice}'. On conserve '{default}'.")
+        return default
+
+    return choice
+
+
 def main():
     print("=" * 60)
     print("🔧 RSI STRATEGY OPTIMIZER")
@@ -116,7 +144,7 @@ def main():
     else:
         symbol = default_symbol
 
-    interval = "1h"
+    interval = prompt_interval(DEFAULT_INTERVAL)
 
     # --------------------------------------------------------
     # CHOIX DE DURÉE
@@ -140,6 +168,10 @@ def main():
     # --------------------------------------------------------
 
     results = optimize_rsi(symbol, interval, start_date, end_date)
+
+    if not results:
+        print("❌ Optimisation interrompue : aucune donnée disponible.")
+        return
 
     best = results[0]
     print("\n🏆 BEST PARAMETERS FOUND :")

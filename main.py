@@ -1,11 +1,19 @@
 # main.py
+import argparse
 import os
 import logging
-from datetime import datetime
 
 from dotenv import load_dotenv
 
-from config import DEFAULT_SYMBOL  # on ne récupère plus STOP_LOSS_PERCENT ici
+from config import (
+    DEFAULT_SYMBOL,
+    DEFAULT_INTERVAL,
+    ALLOWED_INTERVALS,
+    DEFAULT_PERIOD,
+    ALLOWED_PERIODS,
+    PERIOD_DEFINITIONS,
+    compute_period_bounds,
+)  # on ne récupère plus STOP_LOSS_PERCENT ici
 
 from data_manager import DataManager
 from backtester import Backtester
@@ -15,20 +23,127 @@ from strategies import (
     BollingerBandsStrategy,
     MovingAverageCrossStrategy,
     CombinedStrategy,
+    BuyAndHoldStrategy,
 )
 from visualizer import BacktestVisualizer
 from optimize import main as rsi_optimize_main
 from run_live_bot import main as live_bot_main
 
 
+def log_strategy_metrics(name: str, metrics: dict) -> None:
+    """Affiche et journalise les métriques d'une stratégie.
+
+    Extraite pour réutilisation après le refactoring Buy & Hold afin de garder
+    `run_multi_strategy_backtest` lisible.
+    """
+
+    total_return = metrics.get("total_return_pct", 0.0)
+    sharpe = metrics.get("sharpe_ratio", 0.0)
+    trades_count = metrics.get("total_trades", 0)
+    max_dd = metrics.get("max_drawdown", 0.0)
+
+    print(
+        f"    • Return: {total_return:.2f}% | "
+        f"Sharpe: {sharpe:.2f} | "
+        f"Trades: {trades_count} | "
+        f"Max DD: {max_dd:.2f}%"
+    )
+
+    logging.info(
+        f"Result {name}: return={total_return:.2f}% "
+        f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
+    )
+
+
+def run_strategy_once(
+    backtester: Backtester,
+    base_df,
+    strategy,
+    stop_loss: float,
+    take_profit: float,
+):
+    """Exécute un backtest pour une stratégie et retourne les éléments utiles.
+
+    Cette fonction utilitaire centralise l'application conditionnelle du stop-loss /
+    take-profit (Buy & Hold n'en veut pas) et la duplication du journal de trades
+    avant la réinitialisation du backtester.
+    """
+
+    df_copy = base_df.copy()
+    strategy_stop_loss = stop_loss if getattr(strategy, "allow_stop_take", True) else None
+    strategy_take_profit = take_profit if getattr(strategy, "allow_stop_take", True) else None
+
+    bt_df, metrics = backtester.run(
+        data=df_copy,
+        strategy=strategy,
+        stop_loss=strategy_stop_loss,
+        take_profit=strategy_take_profit,
+    )
+
+    trades_df = backtester.get_trade_log().copy()
+    return bt_df, metrics, trades_df
+
+
+def prompt_interval(default_interval: str = DEFAULT_INTERVAL) -> str:
+    """Prompt the user for a candle interval and validate the choice."""
+
+    allowed_display = ", ".join(ALLOWED_INTERVALS)
+    print()
+    print(f"Available intervals: {allowed_display}")
+    user_input = input(
+        f"Choose interval [{default_interval}]: "
+    ).strip()
+
+    if not user_input:
+        return default_interval
+
+    if user_input not in ALLOWED_INTERVALS:
+        print(
+            f"Invalid interval '{user_input}'. Using default '{default_interval}'."
+        )
+        return default_interval
+
+    return user_input
+
+
+def prompt_period(default_period: str = DEFAULT_PERIOD) -> str:
+    """Prompt the user for a historical window duration."""
+
+    print()
+    print("Select backtest period:")
+    period_items = list(enumerate(ALLOWED_PERIODS, start=1))
+    for index, code in period_items:
+        label = PERIOD_DEFINITIONS[code]["label"]
+        marker = " (default)" if code == default_period else ""
+        print(f"  {index}) {label} [{code}]{marker}")
+
+    default_label = PERIOD_DEFINITIONS[default_period]["label"]
+    user_input = input(
+        f"Choice [{default_label}]: "
+    ).strip().lower()
+
+    if not user_input:
+        return default_period
+
+    if user_input in PERIOD_DEFINITIONS:
+        return user_input
+
+    if user_input.isdigit():
+        try:
+            selected_code = period_items[int(user_input) - 1][1]
+            return selected_code
+        except (IndexError, ValueError):
+            pass
+
+    print(
+        f"Invalid period '{user_input}'. Using default '{default_label}' ({default_period})."
+    )
+    return default_period
+
+
 # ------------------ PARAMÈTRES GLOBAUX SIMPLES ------------------
 # BNB par défaut
 SYMBOL = DEFAULT_SYMBOL if DEFAULT_SYMBOL else "BNBUSDT"
-INTERVAL = "1h"
-
-# Période par défaut pour le backtest (choix 1)
-START_DATE = "2024-01-01"
-END_DATE = "2025-11-01"
 
 # Gestion du risque (intégré directement ici)
 INITIAL_CAPITAL = 10_000
@@ -54,14 +169,33 @@ def setup_logging():
 
 
 # ------------------ BACKTEST MULTI-STRATÉGIES (CHOIX 1) ------------------
-def run_multi_strategy_backtest():
+def run_multi_strategy_backtest(
+    interval: str = DEFAULT_INTERVAL,
+    period: str = DEFAULT_PERIOD,
+):
     load_dotenv()
     setup_logging()
 
     symbol = SYMBOL
-    interval = INTERVAL
-    start_date = START_DATE
-    end_date = END_DATE
+
+    if interval not in ALLOWED_INTERVALS:
+        logging.warning(
+            "Interval '%s' is not supported. Falling back to '%s'.",
+            interval,
+            DEFAULT_INTERVAL,
+        )
+        interval = DEFAULT_INTERVAL
+
+    if period not in ALLOWED_PERIODS:
+        logging.warning(
+            "Period '%s' is not supported. Falling back to '%s'.",
+            period,
+            DEFAULT_PERIOD,
+        )
+        period = DEFAULT_PERIOD
+
+    start_date, end_date = compute_period_bounds(period)
+    period_label = PERIOD_DEFINITIONS[period]["label"]
 
     stop_loss = STOP_LOSS_PERCENT
     take_profit = TAKE_PROFIT_PERCENT
@@ -71,14 +205,19 @@ def run_multi_strategy_backtest():
     print("=" * 60)
     print(f"Symbol      : {symbol}")
     print(f"Interval    : {interval}")
-    print(f"Period      : {start_date} -> {end_date}")
+    print(f"Period      : {start_date} -> {end_date} ({period_label})")
     print(f"Capital init: ${INITIAL_CAPITAL:,.2f}")
     print(f"Stop loss   : {stop_loss * 100:.2f} %")
     print(f"Take profit : {take_profit * 100:.2f} %")
     print()
 
     logging.info(
-        f"Backtest multi-strategies: {symbol} {interval} {start_date} -> {end_date}"
+        "Backtest multi-strategies: %s %s %s -> %s (%s)",
+        symbol,
+        interval,
+        start_date,
+        end_date,
+        period,
     )
 
     # ---- Chargement des données ----
@@ -99,6 +238,8 @@ def run_multi_strategy_backtest():
         ("Bollinger Bands", BollingerBandsStrategy()),
         ("MA Cross", MovingAverageCrossStrategy()),
         ("Combined Strategy", CombinedStrategy()),
+        # Référence Buy & Hold ajoutée pour le benchmark simple.
+        ("Buy & Hold", BuyAndHoldStrategy()),
     ]
 
     backtester = Backtester(
@@ -107,54 +248,48 @@ def run_multi_strategy_backtest():
         slippage=SLIPPAGE,
     )
 
-    results = []
     best = None
+    benchmark_metrics = None
 
     for name, strategy in strategy_list:
         print()
         print(f"  Testing: {name}...")
         logging.info(f"Test strategy: {name}")
 
-        df_copy = df.copy()
-
-        bt_df, trades = backtester.run(
-            data=df_copy,
-            strategy=strategy,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
+        bt_df, metrics, trades_df = run_strategy_once(
+            backtester,
+            df,
+            strategy,
+            stop_loss,
+            take_profit,
         )
 
-        metrics = backtester.calculate_metrics(bt_df)
-        results.append((name, metrics, bt_df, trades))
+        if name == "Buy & Hold":
+            # On mémorise les métriques pour le comparatif final (copie défensive).
+            benchmark_metrics = metrics.copy()
 
-        total_return = metrics.get("total_return", 0.0) * 100.0
-        sharpe = metrics.get("sharpe_ratio", 0.0)
-        trades_count = metrics.get("num_trades", 0)
-        max_dd = metrics.get("max_drawdown", 0.0) * 100.0
+        log_strategy_metrics(name, metrics)
 
-        print(
-            f"    • Return: {total_return:.2f}% | "
-            f"Sharpe: {sharpe:.2f} | "
-            f"Trades: {trades_count} | "
-            f"Max DD: {max_dd:.2f}%"
-        )
-
-        logging.info(
-            f"Result {name}: return={total_return:.2f}% "
-            f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
-        )
-
-        if best is None or metrics.get("total_return", -999) > best[1].get(
+        if best is None or metrics.get("total_return", -999) > best["metrics"].get(
             "total_return", -999
         ):
-            best = (name, metrics, bt_df, trades)
+            best = {
+                "name": name,
+                # On stocke une copie pour éviter qu'une mutation ultérieure n'affecte le résumé.
+                "metrics": metrics.copy(),
+                "df": bt_df,
+                "trades": trades_df,
+            }
 
     print()
     if best is None:
         print("No strategy produced results.")
         return
 
-    best_name, best_metrics, best_df, best_trades = best
+    best_name = best["name"]
+    best_metrics = best["metrics"]
+    best_df = best["df"]
+    best_trades = best["trades"]
     logging.info(f"Best strategy: {best_name}")
     print(f"Best strategy: {best_name}")
 
@@ -164,13 +299,13 @@ def run_multi_strategy_backtest():
     print("BACKTEST SUMMARY")
     print("=" * 60)
 
-    final_value = best_metrics.get("final_value", INITIAL_CAPITAL)
-    total_return = best_metrics.get("total_return", 0.0) * 100.0
-    win_rate = best_metrics.get("win_rate", 0.0) * 100.0
-    max_dd = best_metrics.get("max_drawdown", 0.0) * 100.0
+    final_value = best_metrics.get("final_capital", INITIAL_CAPITAL)
+    total_return = best_metrics.get("total_return_pct", 0.0)
+    win_rate = best_metrics.get("win_rate", 0.0)
+    max_dd = best_metrics.get("max_drawdown", 0.0)
     sharpe = best_metrics.get("sharpe_ratio", 0.0)
     calmar = best_metrics.get("calmar_ratio", 0.0)
-    num_trades = best_metrics.get("num_trades", 0)
+    num_trades = best_metrics.get("total_trades", 0)
 
     print("Capital:")
     print(f"  • Initial: ${INITIAL_CAPITAL:,.2f}")
@@ -185,6 +320,21 @@ def run_multi_strategy_backtest():
     print(f"  • Max drawdown : {max_dd:.2f}%")
     print(f"  • Sharpe ratio : {sharpe:.2f}")
     print(f"  • Calmar ratio : {calmar:.2f}")
+
+    if benchmark_metrics is not None:
+        bench_final = benchmark_metrics.get("final_capital", INITIAL_CAPITAL)
+        bench_return = benchmark_metrics.get("total_return_pct", 0.0)
+        bench_max_dd = benchmark_metrics.get("max_drawdown", 0.0)
+
+        print()
+        print("Benchmark Buy & Hold:")
+        print(f"  • Final capital : ${bench_final:,.2f}")
+        print(f"  • Return        : {bench_return:.2f}%")
+        print(f"  • Max drawdown  : {bench_max_dd:.2f}%")
+
+        diff = total_return - bench_return
+        print(f"Compared to Buy & Hold: {diff:+.2f}%")
+
     print("=" * 60)
 
     # ---- Graphiques ----
@@ -192,21 +342,34 @@ def run_multi_strategy_backtest():
     viz.plot_backtest(
         df=best_df,
         trades=best_trades,
-        title=f"Best Strategy: {best_name} - {symbol}",
+        title=f"Best Strategy: {best_name} - {symbol} ({interval}, {period})",
     )
 
 
 # ------------------ MENU PRINCIPAL ------------------
-def main_menu():
+def main_menu(
+    default_interval: str = DEFAULT_INTERVAL,
+    default_period: str = DEFAULT_PERIOD,
+):
     setup_logging()
     load_dotenv()
+
+    current_interval = (
+        default_interval if default_interval in ALLOWED_INTERVALS else DEFAULT_INTERVAL
+    )
+    current_period = (
+        default_period if default_period in ALLOWED_PERIODS else DEFAULT_PERIOD
+    )
 
     while True:
         print()
         print("=" * 60)
         print("TheMiidsOne Crypto Bot - MAIN MENU")
         print("=" * 60)
-        print("1) Backtest multi-strategies (BNBUSDT, 1h)")
+        print(
+            "1) Backtest multi-strategies (BNBUSDT, "
+            f"{current_interval}, {PERIOD_DEFINITIONS[current_period]['label']})"
+        )
         print("2) Optimisation RSI")
         print("3) Live Bot (TEST MODE)")
         print("0) Quit")
@@ -215,7 +378,14 @@ def main_menu():
         choice = input("Your choice: ").strip()
 
         if choice == "1":
-            run_multi_strategy_backtest()
+            selected_interval = prompt_interval(current_interval)
+            selected_period = prompt_period(current_period)
+            run_multi_strategy_backtest(
+                interval=selected_interval,
+                period=selected_period,
+            )
+            current_interval = selected_interval
+            current_period = selected_period
         elif choice == "2":
             rsi_optimize_main()
         elif choice == "3":
@@ -227,5 +397,26 @@ def main_menu():
             print("Invalid choice, try again.")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Crypto bot main menu")
+    parser.add_argument(
+        "--interval",
+        choices=ALLOWED_INTERVALS,
+        default=DEFAULT_INTERVAL,
+        help="Default interval used for multi-strategy backtests.",
+    )
+    parser.add_argument(
+        "--period",
+        choices=ALLOWED_PERIODS,
+        default=DEFAULT_PERIOD,
+        help="Default history length used for multi-strategy backtests.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main_menu()
+    args = parse_args()
+    main_menu(
+        default_interval=args.interval,
+        default_period=args.period,
+    )
