@@ -256,15 +256,10 @@ class BuyAndHoldStrategy(BaseStrategy):
 
         if len(df) > 1:
             first_tradable_index = df.index[1]
-            last_index = df.index[-1]
-
-            # On déclenche l'achat sur la première bougie exploitable (latence 1 barre).
+            # On déclenche l'achat sur la première bougie exploitable.
             df.loc[first_tradable_index, 'signal'] = 1
-            df.loc[first_tradable_index:, 'position'] = 1
 
-            # Vente forcée sur la dernière bougie de la période.
-            if last_index != first_tradable_index:
-                df.loc[last_index, 'signal'] = -1
-            df.loc[last_index:, 'position'] = 0
+        # La position reste ouverte après le premier achat.
+        df['position'] = df['signal'].replace(to_replace=0, method='ffill').fillna(0)
 
         return df
