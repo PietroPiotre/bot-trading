@@ -250,9 +250,8 @@ def run_multi_strategy_backtest(
         slippage=SLIPPAGE,
     )
 
-    results = []
-    benchmark_metrics = None
     best = None
+    benchmark_metrics = None
 
     for name, strategy, is_benchmark in strategy_list:
         print()
@@ -267,116 +266,38 @@ def run_multi_strategy_backtest(
             take_profit,
         )
 
-        metrics_copy = metrics.copy()
-        log_strategy_metrics(name, metrics_copy)
+        if name == "Buy & Hold":
+            # On mémorise les métriques pour le comparatif final (copie défensive).
+            benchmark_metrics = metrics.copy()
 
-        result_entry = {
-            "name": name,
-            "metrics": metrics_copy,
-            "df": bt_df,
-            "trades": trades_df,
-            "is_benchmark": is_benchmark,
-        }
-        results.append(result_entry)
+        log_strategy_metrics(name, metrics)
 
-        if is_benchmark:
-            benchmark_metrics = metrics_copy.copy()
-        else:
-            candidate_return = metrics_copy.get("total_return", float("-inf"))
-            best_return = (
-                best["metrics"].get("total_return", float("-inf"))
-                if best
-                else float("-inf")
-            )
-            if best is None or candidate_return > best_return:
-                best = {
-                    "name": name,
-                    "metrics": metrics_copy.copy(),
-                    "df": bt_df,
-                    "trades": trades_df,
-                }
+        if best is None or metrics.get("total_return", -999) > best["metrics"].get(
+            "total_return", -999
+        ):
+            best = {
+                "name": name,
+                # On stocke une copie pour éviter qu'une mutation ultérieure n'affecte le résumé.
+                "metrics": metrics.copy(),
+                "df": bt_df,
+                "trades": trades_df,
+            }
 
-    print()
-    if not results:
-        print("No strategy produced results.")
-        return
-
-    benchmark_return = (
-        benchmark_metrics.get("total_return_pct", 0.0)
-        if benchmark_metrics is not None
-        else 0.0
-    )
-
-    # ---- Tableau récapitulatif ----
-    print("=" * 92)
-    print("STRATEGY PERFORMANCE VS BUY & HOLD")
-    print("=" * 92)
-
-    header = (
-        f"{'Strategy':<30}{'Final Capital':>16}{'Total %':>10}"
-        f"{'Max DD %':>10}{'Trades':>10}{'Δ vs B&H':>12}"
-    )
-    print(header)
-    print("-" * len(header))
-
-    for entry in results:
-        metrics = entry["metrics"]
-        total_return_pct = metrics.get("total_return_pct", 0.0)
-        diff_vs_bench = (
-            total_return_pct - benchmark_return
-            if not entry["is_benchmark"]
-            else 0.0
-        )
-
-        print(
-            f"{entry['name']:<30}"
-            f"${metrics.get('final_capital', INITIAL_CAPITAL):>15,.2f}"
-            f"{total_return_pct:>9.2f}%"
-            f"{metrics.get('max_drawdown', 0.0):>9.2f}%"
-            f"{metrics.get('total_trades', 0):>10d}"
-            f"{diff_vs_bench:>11.2f}%"
-        )
-
-    print("=" * 92)
-
-    non_benchmark_results = [r for r in results if not r["is_benchmark"]]
-    if benchmark_metrics is not None and non_benchmark_results:
-        outperform = sum(
-            1
-            for r in non_benchmark_results
-            if r["metrics"].get("total_return_pct", 0.0) > benchmark_return
-        )
-        underperform = sum(
-            1
-            for r in non_benchmark_results
-            if r["metrics"].get("total_return_pct", 0.0) < benchmark_return
-        )
-        tie = len(non_benchmark_results) - outperform - underperform
-
-        print(
-            f"Strategies outperforming Buy & Hold: {outperform} | "
-            f"Underperforming: {underperform} | Similar: {tie}"
-        )
-    elif benchmark_metrics is None:
-        print("Benchmark Buy & Hold results unavailable; table shown for reference only.")
-
-    if best is None:
         print()
-        print("No non-benchmark strategies produced results.")
-        return
+        print("=" * 60)
+        print("TOP NON-BENCHMARK STRATEGY SUMMARY")
+        print("=" * 60)
 
     best_name = best["name"]
     best_metrics = best["metrics"]
     best_df = best["df"]
     best_trades = best["trades"]
-
-    print()
-    print("=" * 60)
-    print("TOP NON-BENCHMARK STRATEGY SUMMARY")
-    print("=" * 60)
-
     logging.info(f"Best strategy: {best_name}")
     print(f"Best strategy: {best_name}")
+
+        diff = total_return - benchmark_return
+        if benchmark_result:
+            print(f"  • Δ vs Buy & Hold: {diff:+.2f}%")
 
     final_value = best_metrics.get("final_capital", INITIAL_CAPITAL)
     total_return = best_metrics.get("total_return_pct", 0.0)
@@ -386,7 +307,7 @@ def run_multi_strategy_backtest(
     calmar = best_metrics.get("calmar_ratio", 0.0)
     num_trades = best_metrics.get("total_trades", 0)
 
-    print(f"Strategy: {best_name}")
+    print(f"Strategy: {top_name}")
     print("Capital:")
     print(f"  • Initial: ${INITIAL_CAPITAL:,.2f}")
     print(f"  • Final  : ${final_value:,.2f}")
@@ -402,8 +323,18 @@ def run_multi_strategy_backtest(
     print(f"  • Calmar ratio : {calmar:.2f}")
 
     if benchmark_metrics is not None:
-        diff = total_return - benchmark_return
-        print(f"  • Δ vs Buy & Hold: {diff:+.2f}%")
+        bench_final = benchmark_metrics.get("final_capital", INITIAL_CAPITAL)
+        bench_return = benchmark_metrics.get("total_return_pct", 0.0)
+        bench_max_dd = benchmark_metrics.get("max_drawdown", 0.0)
+
+        print()
+        print("Benchmark Buy & Hold:")
+        print(f"  • Final capital : ${bench_final:,.2f}")
+        print(f"  • Return        : {bench_return:.2f}%")
+        print(f"  • Max drawdown  : {bench_max_dd:.2f}%")
+
+        diff = total_return - bench_return
+        print(f"Compared to Buy & Hold: {diff:+.2f}%")
 
     print("=" * 60)
 
@@ -412,7 +343,7 @@ def run_multi_strategy_backtest(
     viz.plot_backtest(
         df=best_df,
         trades=best_trades,
-        title=(f"Top Non-Benchmark: {best_name} - {symbol} ({interval}, {period})"),
+        title=f"Best Strategy: {best_name} - {symbol} ({interval}, {period})",
     )
 
 
@@ -440,9 +371,8 @@ def main_menu(
             "1) Backtest multi-strategies (BNBUSDT, "
             f"{current_interval}, {PERIOD_DEFINITIONS[current_period]['label']})"
         )
-        print("2) Optimisation MACD")
-        print("3) Optimisation RSI")
-        print("4) Live Bot (TEST MODE)")
+        print("2) Optimisation RSI")
+        print("3) Live Bot (TEST MODE)")
         print("0) Quit")
         print()
 
