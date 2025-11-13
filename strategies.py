@@ -6,6 +6,11 @@ from abc import ABC, abstractmethod
 
 class BaseStrategy(ABC):
     """Classe de base pour toutes les stratégies"""
+
+    # Par défaut, les stratégies utilisent le stop-loss / take-profit gérés
+    # dans le backtester. Les stratégies qui ne doivent pas y être soumises
+    # (ex: Buy & Hold) peuvent surcharger ce flag.
+    allow_stop_take = True
     
     def __init__(self, params=None):
         self.params = params or {}
@@ -195,13 +200,13 @@ class CombinedStrategy(BaseStrategy):
 
 class MovingAverageCrossStrategy(BaseStrategy):
     """Stratégie de croisement de moyennes mobiles"""
-    
+
     def __init__(self, params=None):
         super().__init__(params)
         self.fast_period = self.params.get('ma_fast', 20)
         self.slow_period = self.params.get('ma_slow', 50)
         self.ma_type = self.params.get('ma_type', 'EMA')  # 'SMA' ou 'EMA'
-    
+
     def generate_signals(self, data):
         """Génère les signaux basés sur le croisement de MA"""
         df = data.copy()
@@ -229,8 +234,37 @@ class MovingAverageCrossStrategy(BaseStrategy):
         # Death Cross (vente)
         death_cross = (df['MA_Fast'] < df['MA_Slow']) & (df['prev_fast'] >= df['prev_slow'])
         df.loc[death_cross, 'signal'] = -1
-        
+
         # Calculer les positions
         df['position'] = df['signal'].replace(to_replace=0, method='ffill').fillna(0)
-        
+
+        return df
+
+
+class BuyAndHoldStrategy(BaseStrategy):
+    """Stratégie de référence Buy & Hold"""
+
+    # On n'applique pas de stop-loss / take-profit pour Buy & Hold.
+    allow_stop_take = False
+
+    def generate_signals(self, data):
+        """Achète une seule fois au début puis conserve la position."""
+        df = data.copy()
+
+        df['signal'] = 0
+        df['position'] = 0
+
+        if len(df) > 1:
+            first_tradable_index = df.index[1]
+            last_index = df.index[-1]
+
+            # On déclenche l'achat sur la première bougie exploitable (latence 1 barre).
+            df.loc[first_tradable_index, 'signal'] = 1
+            df.loc[first_tradable_index:, 'position'] = 1
+
+            # Vente forcée sur la dernière bougie de la période.
+            if last_index != first_tradable_index:
+                df.loc[last_index, 'signal'] = -1
+            df.loc[last_index:, 'position'] = 0
+
         return df

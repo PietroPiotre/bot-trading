@@ -193,6 +193,10 @@ class Backtester:
             drawdown = (total_value - peak) / peak if peak != 0 else 0.0
             df.iloc[i, df.columns.get_loc("drawdown")] = drawdown
 
+        # Forcer la clôture de toute position encore ouverte à la fin du backtest.
+        if self.position > 0:
+            self._close_position(df, last_index, "End of Period")
+
         metrics = self.calculate_metrics(df)
         return df, metrics
 

@@ -12,25 +12,59 @@ echo         TheMiidsOne Crypto Bot
 echo ==========================================
 echo.
 
-rem Check virtual env
-if not exist "venv\Scripts\activate" (
-    echo ERROR: virtual environment not found.
-    echo Create it with:  py -m venv venv
-    echo Then install deps:  venv\Scripts\activate ^& pip install -r requirements.txt
+rem Detect Python launcher
+set "PYTHON_CMD="
+for %%P in (py python python3) do (
+    if not defined PYTHON_CMD (
+        %%P --version >nul 2>&1 && set "PYTHON_CMD=%%P"
+    )
+)
+
+if not defined PYTHON_CMD (
+    echo ERROR: Python introuvable. Installez Python 3 et reessayez.
     pause
     exit /b 1
 )
 
-echo Activating virtual env...
+rem Create virtual env if missing
+if not exist "venv\Scripts\python.exe" (
+    echo Creation de l'environnement virtuel...
+    %PYTHON_CMD% -m venv venv
+    if errorlevel 1 (
+        echo ERROR: impossible de creer l'environnement virtuel.
+        pause
+        exit /b 1
+    )
+    set "NEED_REQUIREMENTS=1"
+)
+
+echo Activation de l'environnement virtuel...
 call venv\Scripts\activate
 
 if errorlevel 1 (
-    echo ERROR: cannot activate virtual env.
+    echo ERROR: activation impossible.
     pause
     exit /b 1
 )
 
-echo Virtual env active.
+rem Install requirements on first creation or when requested via flag file
+if exist "venv\.needs_deps" set "NEED_REQUIREMENTS=1"
+
+if defined NEED_REQUIREMENTS (
+    echo Installation des dependances...
+    python -m pip install --upgrade pip
+    if exist requirements.txt (
+        python -m pip install -r requirements.txt
+    )
+    if errorlevel 1 (
+        echo ERROR: l'installation des dependances a echoue.
+        pause
+        exit /b 1
+    )
+    if exist "venv\.needs_deps" del /f /q "venv\.needs_deps" >nul 2>&1
+)
+
+echo Environnement pret.
 echo.
 
 echo Mode:
