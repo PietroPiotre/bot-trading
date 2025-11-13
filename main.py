@@ -1,7 +1,6 @@
 # main.py
 import os
 import logging
-from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -20,6 +19,60 @@ from strategies import (
 from visualizer import BacktestVisualizer
 from optimize import main as rsi_optimize_main
 from run_live_bot import main as live_bot_main
+
+
+def log_strategy_metrics(name: str, metrics: dict) -> None:
+    """Affiche et journalise les métriques d'une stratégie.
+
+    Extraite pour réutilisation après le refactoring Buy & Hold afin de garder
+    `run_multi_strategy_backtest` lisible.
+    """
+
+    total_return = metrics.get("total_return_pct", 0.0)
+    sharpe = metrics.get("sharpe_ratio", 0.0)
+    trades_count = metrics.get("total_trades", 0)
+    max_dd = metrics.get("max_drawdown", 0.0)
+
+    print(
+        f"    • Return: {total_return:.2f}% | "
+        f"Sharpe: {sharpe:.2f} | "
+        f"Trades: {trades_count} | "
+        f"Max DD: {max_dd:.2f}%"
+    )
+
+    logging.info(
+        f"Result {name}: return={total_return:.2f}% "
+        f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
+    )
+
+
+def run_strategy_once(
+    backtester: Backtester,
+    base_df,
+    strategy,
+    stop_loss: float,
+    take_profit: float,
+):
+    """Exécute un backtest pour une stratégie et retourne les éléments utiles.
+
+    Cette fonction utilitaire centralise l'application conditionnelle du stop-loss /
+    take-profit (Buy & Hold n'en veut pas) et la duplication du journal de trades
+    avant la réinitialisation du backtester.
+    """
+
+    df_copy = base_df.copy()
+    strategy_stop_loss = stop_loss if getattr(strategy, "allow_stop_take", True) else None
+    strategy_take_profit = take_profit if getattr(strategy, "allow_stop_take", True) else None
+
+    bt_df, metrics = backtester.run(
+        data=df_copy,
+        strategy=strategy,
+        stop_loss=strategy_stop_loss,
+        take_profit=strategy_take_profit,
+    )
+
+    trades_df = backtester.get_trade_log().copy()
+    return bt_df, metrics, trades_df
 
 
 # ------------------ PARAMÈTRES GLOBAUX SIMPLES ------------------
@@ -100,6 +153,7 @@ def run_multi_strategy_backtest():
         ("Bollinger Bands", BollingerBandsStrategy()),
         ("MA Cross", MovingAverageCrossStrategy()),
         ("Combined Strategy", CombinedStrategy()),
+        # Référence Buy & Hold ajoutée pour le benchmark simple.
         ("Buy & Hold", BuyAndHoldStrategy()),
     ]
 
@@ -109,7 +163,6 @@ def run_multi_strategy_backtest():
         slippage=SLIPPAGE,
     )
 
-    results = []
     best = None
     benchmark_metrics = None
 
@@ -118,79 +171,40 @@ def run_multi_strategy_backtest():
         print(f"  Testing: {name}...")
         logging.info(f"Test strategy: {name}")
 
-        df_copy = df.copy()
-
-# les stratégies peuvent indiquer qu'elles ne doivent pas subir le SL/TP.
-strategy_stop_loss = (
-    stop_loss if getattr(strategy, "allow_stop_take", True) else None
-)
-
-strategy_take_profit = (
-    take_profit if getattr(strategy, "allow_stop_take", True) else None
-)
-
-bt_df, metrics = backtester.run(
-    data=df_copy,
-    strategy=strategy,
-    stop_loss=strategy_stop_loss,
-    take_profit=strategy_take_profit,
-)
-
-        trades_df = backtester.get_trade_log().copy()
-        results.append((name, metrics, bt_df, trades_df))
-
-if name == "Buy & Hold":
-    # On mémorise les métriques pour le comparatif final.
-    benchmark_metrics = metrics
-
-total_return = metrics.get("total_return_pct", 0.0)
-sharpe = metrics.get("sharpe_ratio", 0.0)
-trades_count = metrics.get("total_trades", 0)
-max_dd = metrics.get("max_drawdown", 0.0)
-
-print(
-    f"    • Return: {total_return:.2f}% | "
-    f"Sharpe: {sharpe:.2f} | "
-    f"Trades: {trades_count} | "
-    f"Max DD: {max_dd:.2f}%"
-)
-
-logging.info(
-    f"Result {name}: return={total_return:.2f}% "
-    f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
-)
-
-if best is None or metrics.get("total_return", -999) > best[1].get("total_return", -999):
-    best = (name, metrics, bt_df, trades_df)
- main
-        total_return = metrics.get("total_return_pct", 0.0)
-        sharpe = metrics.get("sharpe_ratio", 0.0)
-        trades_count = metrics.get("total_trades", 0)
-        max_dd = metrics.get("max_drawdown", 0.0)
-
-        print(
-            f"    • Return: {total_return:.2f}% | "
-            f"Sharpe: {sharpe:.2f} | "
-            f"Trades: {trades_count} | "
-            f"Max DD: {max_dd:.2f}%"
+        bt_df, metrics, trades_df = run_strategy_once(
+            backtester,
+            df,
+            strategy,
+            stop_loss,
+            take_profit,
         )
 
-        logging.info(
-            f"Result {name}: return={total_return:.2f}% "
-            f"sharpe={sharpe:.2f} trades={trades_count} maxDD={max_dd:.2f}%"
-        )
+        if name == "Buy & Hold":
+            # On mémorise les métriques pour le comparatif final (copie défensive).
+            benchmark_metrics = metrics.copy()
 
-        if best is None or metrics.get("total_return", -999) > best[1].get(
+        log_strategy_metrics(name, metrics)
+
+        if best is None or metrics.get("total_return", -999) > best["metrics"].get(
             "total_return", -999
         ):
-            best = (name, metrics, bt_df, trades_df)
+            best = {
+                "name": name,
+                # On stocke une copie pour éviter qu'une mutation ultérieure n'affecte le résumé.
+                "metrics": metrics.copy(),
+                "df": bt_df,
+                "trades": trades_df,
+            }
 
     print()
     if best is None:
         print("No strategy produced results.")
         return
 
-    best_name, best_metrics, best_df, best_trades = best
+    best_name = best["name"]
+    best_metrics = best["metrics"]
+    best_df = best["df"]
+    best_trades = best["trades"]
     logging.info(f"Best strategy: {best_name}")
     print(f"Best strategy: {best_name}")
 
