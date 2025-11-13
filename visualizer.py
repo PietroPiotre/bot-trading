@@ -119,6 +119,16 @@ class BacktestVisualizer:
         plt.suptitle(title, fontsize=16, fontweight='bold', y=1.02)
         plt.tight_layout()
         return fig
+
+    def plot_backtest(self, df, trades=None, title="Backtest Results"):
+        """Compatibilité ascendante avec l'API historique du visualiseur.
+
+        L'interface du projet appelait auparavant :meth:`plot_backtest`, mais le
+        corps principal a été renommé en :meth:`plot_backtest_results`.  Cette
+        fine couche délègue simplement pour éviter les attribut errors.
+        """
+
+        return self.plot_backtest_results(df, trades_df=trades, title=title)
     
     def plot_strategy_comparison(self, results_dict):
         """
