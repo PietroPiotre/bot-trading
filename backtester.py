@@ -1,11 +1,10 @@
 # backtester.py
+from typing import Dict, List, Tuple, Optional
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
-
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional
 
 
 class Backtester:
@@ -142,7 +141,8 @@ class Backtester:
             signal = df.iloc[i]["signal"] if "signal" in df.columns else 0
 
             if self.position != 0 and self.entry_price is not None:
-                price_change_pct = (price_close - self.entry_price) / self.entry_price
+                price_change_pct = (
+                    price_close - self.entry_price) / self.entry_price
 
                 # Long uniquement pour l'instant
                 if self.position > 0:
@@ -157,7 +157,8 @@ class Backtester:
             if signal == 1:
                 # BUY signal
                 if self.position == 0:
-                    self._open_position(df, i, side="buy", position_size=position_size)
+                    self._open_position(df, i, side="buy",
+                                        position_size=position_size)
                 else:
                     # On est déjà en position long -> possibilité de pyramiding plus tard
                     pass
@@ -185,7 +186,8 @@ class Backtester:
                 ret = 0.0
             df.iloc[i, df.columns.get_loc("returns")] = ret
 
-            cum_ret = (total_value - self.initial_capital) / self.initial_capital
+            cum_ret = (total_value - self.initial_capital) / \
+                self.initial_capital
             df.iloc[i, df.columns.get_loc("cumulative_returns")] = cum_ret
 
             peak = max(df.iloc[i - 1]["peak"], total_value)
@@ -272,7 +274,8 @@ class Backtester:
             }
 
         pnl = (exec_price - self.current_trade["entry_price"]) * qty
-        pnl_pct = (exec_price - self.current_trade["entry_price"]) / self.current_trade["entry_price"]
+        pnl_pct = (
+            exec_price - self.current_trade["entry_price"]) / self.current_trade["entry_price"]
 
         self.current_trade.update(
             {
@@ -300,7 +303,8 @@ class Backtester:
         # Métriques de base
         metrics["initial_capital"] = self.initial_capital
         metrics["final_capital"] = float(df.iloc[-1]["total_value"])
-        metrics["total_return"] = (metrics["final_capital"] - self.initial_capital) / self.initial_capital
+        metrics["total_return"] = (
+            metrics["final_capital"] - self.initial_capital) / self.initial_capital
         metrics["total_return_pct"] = metrics["total_return"] * 100.0
 
         # Métriques des trades
@@ -318,16 +322,21 @@ class Backtester:
                 else 0.0
             )
 
-            metrics["avg_win"] = float(np.mean([t["pnl"] for t in winning_trades])) if winning_trades else 0.0
-            metrics["avg_loss"] = float(np.mean([t["pnl"] for t in losing_trades])) if losing_trades else 0.0
+            metrics["avg_win"] = float(
+                np.mean([t["pnl"] for t in winning_trades])) if winning_trades else 0.0
+            metrics["avg_loss"] = float(
+                np.mean([t["pnl"] for t in losing_trades])) if losing_trades else 0.0
 
             if metrics["avg_loss"] != 0 and metrics["losing_trades"] > 0:
-                metrics["profit_factor"] = abs(metrics["avg_win"] / metrics["avg_loss"])
+                metrics["profit_factor"] = abs(
+                    metrics["avg_win"] / metrics["avg_loss"])
             else:
                 metrics["profit_factor"] = 0.0
 
-            metrics["max_win"] = max([t["pnl"] for t in winning_trades]) if winning_trades else 0.0
-            metrics["max_loss"] = min([t["pnl"] for t in losing_trades]) if losing_trades else 0.0
+            metrics["max_win"] = max(
+                [t["pnl"] for t in winning_trades]) if winning_trades else 0.0
+            metrics["max_loss"] = min(
+                [t["pnl"] for t in losing_trades]) if losing_trades else 0.0
         else:
             metrics["winning_trades"] = 0
             metrics["losing_trades"] = 0
@@ -343,7 +352,8 @@ class Backtester:
         if len(returns) > 0:
             metrics["volatility"] = float(returns.std() * np.sqrt(365))
             metrics["sharpe_ratio"] = (
-                metrics["total_return"] / metrics["volatility"] if metrics["volatility"] > 0 else 0.0
+                metrics["total_return"] /
+                metrics["volatility"] if metrics["volatility"] > 0 else 0.0
             )
         else:
             metrics["volatility"] = 0.0
@@ -357,7 +367,8 @@ class Backtester:
             metrics["max_drawdown"] = 0.0
 
         if metrics["max_drawdown"] != 0:
-            metrics["calmar_ratio"] = metrics["total_return_pct"] / abs(metrics["max_drawdown"])
+            metrics["calmar_ratio"] = metrics["total_return_pct"] / \
+                abs(metrics["max_drawdown"])
         else:
             metrics["calmar_ratio"] = 0.0
 
@@ -371,7 +382,8 @@ class Backtester:
 
         metrics["backtest_days"] = days
         metrics["annual_return"] = (
-            (1 + metrics["total_return"]) ** (365.0 / days) - 1 if days > 0 else 0.0
+            (1 + metrics["total_return"]) ** (365.0 / days) -
+            1 if days > 0 else 0.0
         ) * 100.0
 
         return metrics
