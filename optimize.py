@@ -15,6 +15,7 @@ logging.basicConfig(
 # UTILITAIRES : Durées prédéfinies
 # =====================================================================
 
+
 def get_date_range(option):
     """
     Retourne start_date, end_date selon la durée choisie.
@@ -45,7 +46,8 @@ def optimize_rsi(symbol, interval, start_date, end_date):
     """
     Teste une grille de RSI et retourne les meilleures combinaisons.
     """
-    logging.info(f"Optimisation RSI sur {symbol} | {interval} | {start_date} -> {end_date}")
+    logging.info(
+        f"Optimisation RSI sur {symbol} | {interval} | {start_date} -> {end_date}")
 
     dm = DataManager()
     df = dm.get_historical_data(symbol, interval, start_date, end_date)
@@ -82,7 +84,8 @@ def optimize_rsi(symbol, interval, start_date, end_date):
     oversold_levels = [20, 25, 30]
     overbought_levels = [70, 75, 80]
 
-    total_combos = len(rsi_periods) * len(oversold_levels) * len(overbought_levels)
+    total_combos = len(rsi_periods) * len(oversold_levels) * \
+        len(overbought_levels)
     print(f"🔍 Testing {total_combos} combinations...")
 
     backtester = Backtester()
@@ -181,7 +184,8 @@ def main():
 
     start_date, end_date = get_date_range(choice)
 
-    print(f"\n📊 Optimisation sur {symbol} | {interval} | {start_date} → {end_date}\n")
+    print(
+        f"\n📊 Optimisation sur {symbol} | {interval} | {start_date} → {end_date}\n")
 
     # --------------------------------------------------------
     # LANCER L'OPTIMISATION
@@ -209,4 +213,3 @@ def main():
 # =====================================================================
 if __name__ == "__main__":
     main()
-

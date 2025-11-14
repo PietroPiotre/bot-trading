@@ -92,7 +92,8 @@ def main():
 
         if best is None or result["return"] > best["return"]:
             best = result
-            print(f"    ✅ New best: Return={best['return']:.2f}% | Sharpe={best['sharpe']:.2f}")
+            print(
+                f"    ✅ New best: Return={best['return']:.2f}% | Sharpe={best['sharpe']:.2f}")
 
         if idx % 10 == 0:
             print(f"    Progress: {idx}/{len(combinations)}")

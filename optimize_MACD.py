@@ -259,7 +259,8 @@ def display_results(results: List[MacdResult]) -> None:
 def cli(symbol: str, interval: str, period: str) -> None:
     """Entry point used by both the module and the main menu."""
 
-    start_date, end_date, results = run_macd_optimisation(symbol, interval, period)
+    start_date, end_date, results = run_macd_optimisation(
+        symbol, interval, period)
     if not results:
         return
 
@@ -291,7 +292,8 @@ def interactive_session(
     print(f"\n📌 Symbole par défaut : {symbol}")
     use_default = input("Utiliser un autre symbole ? (O/n) : ").strip().lower()
     if use_default == "n":
-        entered_symbol = input("👉 Entre un symbole (ex: BTCUSDT) : ").upper().strip()
+        entered_symbol = input(
+            "👉 Entre un symbole (ex: BTCUSDT) : ").upper().strip()
         if entered_symbol:
             symbol = entered_symbol
 
@@ -305,7 +307,8 @@ def interactive_session(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Optimisation MACD")
-    parser.add_argument("--symbol", default=DEFAULT_SYMBOL, help="Paire à optimiser.")
+    parser.add_argument("--symbol", default=DEFAULT_SYMBOL,
+                        help="Paire à optimiser.")
     parser.add_argument(
         "--interval",
         choices=ALLOWED_INTERVALS,
@@ -327,7 +330,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
 
     args = parse_args()
 
@@ -343,4 +347,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
